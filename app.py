@@ -11,6 +11,24 @@ import os
 from datetime import datetime
 
 # ==========================================
+# 🚩 ROBUST PATH DISCOVERY
+# ==========================================
+MODEL_FILENAME = "newly_trained.keras"
+
+def find_model_file(filename):
+    # Search in order: Current directory, Script directory, and Common Streamlit mount
+    search_locations = [
+        os.path.join(os.getcwd(), filename),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), filename),
+        f"/mount/src/check-iai/{filename}"
+    ]
+    for path in search_locations:
+        if os.path.exists(path):
+            return path
+    return None
+
+MODEL_PATH = find_model_file(MODEL_FILENAME)
+# ==========================================
 # 🚩 SYSTEM CORE CONFIGURATION
 # ==========================================
 st.set_page_config(
