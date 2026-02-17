@@ -11,6 +11,17 @@ import os
 import time
 from datetime import datetime
 
+import os
+
+# Get the directory where app.py is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Join it with the filename
+MODEL_PATH = os.path.join(BASE_DIR, "Newly_trained.keras")
+
+# Load it
+model = tf.keras.models.load_model(MODEL_PATH)
+
 # ==========================================
 # 🚩 SYSTEM CORE CONFIGURATION
 # ==========================================
