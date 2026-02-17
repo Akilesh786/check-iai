@@ -20,13 +20,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Robust Pathing: Check current directory and mount directory
-MODEL_FILENAME = "Newly_trained.keras"
-possible_paths = [
-    os.path.join(os.getcwd(), MODEL_FILENAME),
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), MODEL_FILENAME),
-    f"/mount/src/check-iai/{MODEL_FILENAME}"
-]
+# FIXED: Filename changed to lowercase 'n' to match your GitHub upload
+MODEL_FILENAME = "newly_trained.keras"
+
+# Robust Pathing for Streamlit Cloud
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, MODEL_FILENAME)
 
 INSTRUMENTS = ['cel', 'cla', 'flu', 'gac', 'gel', 'org', 'pia', 'sax', 'tru', 'vio', 'voi']
 FULL_NAMES = {
@@ -39,22 +38,25 @@ FULL_NAMES = {
 # 🧠 AI ANALYTICS ENGINE
 # ==========================================
 class InstrunetCore:
-    def __init__(self, paths):
-        self.model = self._load_model(paths)
+    def __init__(self, path):
+        self.model = self._load_model(path)
 
     @st.cache_resource
-    def _load_model(_self, paths):
-        for path in paths:
-            if os.path.exists(path):
-                try:
-                    # compile=False prevents version mismatch errors
-                    return tf.keras.models.load_model(path, compile=False)
-                except Exception as e:
-                    st.error(f"Attempted {path} but failed: {e}")
+    def _load_model(_self, path):
+        if os.path.exists(path):
+            try:
+                # compile=False avoids version mismatch crashes
+                return tf.keras.models.load_model(path, compile=False)
+            except Exception as e:
+                st.error(f"Error loading model: {e}")
+                return None
         return None
 
     def process_signal(self, path):
+        # Load audio (limited to 15s to save memory)
         y, sr = librosa.load(path, sr=22050, duration=15)
+        
+        # Calculate onset strength
         onset_env = librosa.onset.onset_strength(y=y, sr=sr)
         
         # FIXED: Explicit keyword arguments for compatibility with new Librosa
@@ -86,30 +88,43 @@ class InstrunetCore:
         return {
             "result": {"label": FULL_NAMES[INSTRUMENTS[top_idx]], "conf": avg_preds[top_idx]},
             "data": {"dist": {FULL_NAMES[INSTRUMENTS[i]]: float(avg_preds[i]) for i in range(len(INSTRUMENTS))}},
-            "signal": {"y": y, "sr": sr, "landmarks": times, "spec": librosa.feature.melspectrogram(y=y, sr=sr)}
+            "signal": {"y": y, "sr": sr, "landmarks": times}
         }
 
 # ==========================================
-# 🎨 UI & STYLING
+# 🎨 BEAUTIFIED UI ENGINE
 # ==========================================
 def apply_custom_styles():
     st.markdown("""
         <style>
         .stApp { background: #0b0f19; color: #e2e8f0; }
         [data-testid="stSidebar"] { background-color: #0f172a !important; border-right: 1px solid #1e293b; }
-        div[role="radiogroup"] > label { padding: 15px 0px !important; font-size: 1.1rem !important; }
-        .hero-section { background: linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%); border-radius: 24px; padding: 40px; text-align: center; margin-bottom: 30px; }
-        .metric-card { background: rgba(30, 41, 59, 0.4); border-radius: 16px; padding: 30px; border: 1px solid #334155; text-align: center; margin-bottom: 40px; }
-        .ai-msg { background: #1e293b; border-radius: 12px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #38bdf8; }
+        
+        /* Spaced Sidebar Navigation */
+        div[role="radiogroup"] > label {
+            padding: 15px 0px !important;
+            font-size: 1.1rem !important;
+            font-weight: 600 !important;
+        }
+
+        .hero-section {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
+            border-radius: 24px; padding: 40px; text-align: center; margin-bottom: 40px;
+        }
+
+        .metric-card {
+            background: rgba(30, 41, 59, 0.4); border-radius: 16px; padding: 35px;
+            border: 1px solid #334155; text-align: center; margin-bottom: 50px;
+        }
         </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 🚀 MAIN APP
+# 🚀 MAIN APP LOOP
 # ==========================================
 def main():
     apply_custom_styles()
-    engine = InstrunetCore(possible_paths)
+    engine = InstrunetCore(MODEL_PATH)
     
     if "current" not in st.session_state: st.session_state.current = None
 
@@ -119,41 +134,51 @@ def main():
 
     if nav == "Home":
         st.markdown("<div class='hero-section'><h1>INSTRUNET V2</h1><p>Enhanced CNN Instrument Classifier</p></div>", unsafe_allow_html=True)
-        st.markdown("<div class='metric-card'><h3>System Architecture</h3><p>Using CNN for Spectral Mapping and Peak Pick Landmarks.</p></div>", unsafe_allow_html=True)
+        st.markdown("<div class='metric-card'><h3>System Architecture</h3><p>Using CNN for Spectral Mapping and Peak Picking Temporal Landmarks.</p></div>", unsafe_allow_html=True)
 
     elif nav == "Upload & Analyze":
         st.title("🎙️ Analysis Studio")
+        
+        # RESTORED: Multi-source input
         tab1, tab2 = st.tabs(["📁 File Upload", "🎤 Live Record"])
-        with tab1: u_file = st.file_uploader("Upload WAV/MP3", type=["wav", "mp3"])
-        with tab2: r_file = st.audio_input("Record Instrument")
+        
+        with tab1:
+            u_file = st.file_uploader("Upload WAV/MP3", type=["wav", "mp3"])
+        with tab2:
+            r_file = st.audio_input("Record Instrument")
         
         source = u_file if u_file else r_file
+        
         if source:
             st.audio(source)
             if st.button("RUN NEURAL SCAN"):
                 if engine.model is None:
-                    st.error(f"Critical Error: {MODEL_FILENAME} not found in project paths.")
+                    st.error(f"Critical Error: {MODEL_FILENAME} not found. Ensure the filename matches exactly.")
                 else:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                        tmp.write(source.getvalue()); p = tmp.name
-                    res = engine.process_signal(p)
-                    st.session_state.current = res
-                    st.success("Analysis complete! Switch to Distribution tab.")
+                    with st.spinner("Analyzing audio frequencies..."):
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                            tmp.write(source.getvalue()); p = tmp.name
+                        res = engine.process_signal(p)
+                        st.session_state.current = res
+                        st.success("Scan Complete! Go to 'Instrument Distribution'.")
 
     elif nav == "Instrument Distribution":
         if st.session_state.current:
             res = st.session_state.current
-            st.header(f"Result: {res['result']['label']}")
+            st.header(f"Detected: {res['result']['label']}")
+            st.write(f"Confidence: {res['result']['conf']*100:.2f}%")
             df = pd.DataFrame(res['data']['dist'].items(), columns=['Inst', 'Val'])
             st.plotly_chart(px.bar(df, x='Inst', y='Val', template="plotly_dark"), use_container_width=True)
         else:
-            st.warning("Analyze audio in the Studio first.")
+            st.warning("Please analyze an audio file first.")
 
     elif nav == "Deep Analysis":
         if st.session_state.current:
             res = st.session_state.current
+            st.header("Signal Landmarks")
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=res['signal']['y'][::100], name="Waveform", line=dict(color="#38bdf8")))
+            # Draw peak markers
             for l in res['signal']['landmarks']:
                 fig.add_vline(x=l*220.5, line_dash="dash", line_color="red")
             st.plotly_chart(fig, use_container_width=True)
