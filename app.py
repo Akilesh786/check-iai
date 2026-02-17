@@ -1,59 +1,28 @@
 import streamlit as st
 import tensorflow as tf
 import librosa
-import librosa.display
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import tempfile
 import os
-from datetime import datetime
 
 # ==========================================
-# 🚩 ROBUST PATH DISCOVERY
+# 🚩 ROBUST FILE DISCOVERY
 # ==========================================
-MODEL_FILENAME = "newly_trained.keras"
-
-def find_model_file(filename):
-    # Search in order: Current directory, Script directory, and Common Streamlit mount
-    search_locations = [
-        os.path.join(os.getcwd(), filename),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), filename),
-        f"/mount/src/check-iai/{filename}"
-    ]
-    for path in search_locations:
-        if os.path.exists(path):
-            return path
+def find_model(name):
+    """Searches the entire project directory for the model file."""
+    for root, dirs, files in os.walk(os.getcwd()):
+        if name in files:
+            return os.path.join(root, name)
     return None
 
-MODEL_PATH = find_model_file(MODEL_FILENAME)
-# ==========================================
-# 🚩 SYSTEM CORE CONFIGURATION
-# ==========================================
-st.set_page_config(
-    page_title="Instrunet AI V2",
-    page_icon="🎼",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# FIXED: Filename changed to lowercase 'n' to match your GitHub upload
 MODEL_FILENAME = "newly_trained.keras"
-
-# Robust Pathing for Streamlit Cloud
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, MODEL_FILENAME)
-
-INSTRUMENTS = ['cel', 'cla', 'flu', 'gac', 'gel', 'org', 'pia', 'sax', 'tru', 'vio', 'voi']
-FULL_NAMES = {
-    'cel': 'Cello', 'cla': 'Clarinet', 'flu': 'Flute', 'gac': 'Acoustic Guitar',
-    'gel': 'Electric Guitar', 'org': 'Organ', 'pia': 'Piano', 'sax': 'Saxophone',
-    'tru': 'Trumpet', 'vio': 'Violin', 'voi': 'Human Voice'
-}
+MODEL_PATH = find_model(MODEL_FILENAME)
 
 # ==========================================
-# 🧠 AI ANALYTICS ENGINE
+# 🧠 AI ENGINE
 # ==========================================
 class InstrunetCore:
     def __init__(self, path):
@@ -61,33 +30,23 @@ class InstrunetCore:
 
     @st.cache_resource
     def _load_model(_self, path):
-        if os.path.exists(path):
-            try:
-                # compile=False avoids version mismatch crashes
-                return tf.keras.models.load_model(path, compile=False)
-            except Exception as e:
-                st.error(f"Error loading model: {e}")
-                return None
-        return None
+        if not path:
+            st.error(f"❌ '{MODEL_FILENAME}' not found in the repository. Please check your GitHub file list.")
+            return None
+        try:
+            # compile=False is vital for loading across different Keras versions
+            return tf.keras.models.load_model(path, compile=False)
+        except Exception as e:
+            st.error(f"❌ Model found at {path} but failed to load. Error: {e}")
+            st.info("Tip: If the error mentions 'zip file', your upload might be corrupted. Try re-uploading to GitHub.")
+            return None
 
     def process_signal(self, path):
-        # Load audio (limited to 15s to save memory)
         y, sr = librosa.load(path, sr=22050, duration=15)
-        
-        # Calculate onset strength
         onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-        
-        # FIXED: Explicit keyword arguments for compatibility with new Librosa
         peaks = librosa.util.peak_pick(
-            onset_env, 
-            pre_max=7, 
-            post_max=7, 
-            pre_avg=7, 
-            post_avg=7, 
-            delta=0.5, 
-            wait=30
+            onset_env, pre_max=7, post_max=7, pre_avg=7, post_avg=7, delta=0.5, wait=30
         )
-        
         times = librosa.frames_to_time(peaks, sr=sr)
         if len(times) == 0: times = [0.0]
         
@@ -101,105 +60,50 @@ class InstrunetCore:
             features.append(self.model.predict(mfcc.reshape(1, 130, 40, 1), verbose=0)[0])
 
         avg_preds = np.mean(features, axis=0)
-        top_idx = np.argmax(avg_preds)
-        
-        return {
-            "result": {"label": FULL_NAMES[INSTRUMENTS[top_idx]], "conf": avg_preds[top_idx]},
-            "data": {"dist": {FULL_NAMES[INSTRUMENTS[i]]: float(avg_preds[i]) for i in range(len(INSTRUMENTS))}},
-            "signal": {"y": y, "sr": sr, "landmarks": times}
-        }
+        return {"label": np.argmax(avg_preds), "dist": avg_preds, "y": y, "peaks": times}
 
 # ==========================================
-# 🎨 BEAUTIFIED UI ENGINE
+# 🎨 UI STYLING
 # ==========================================
-def apply_custom_styles():
-    st.markdown("""
-        <style>
-        .stApp { background: #0b0f19; color: #e2e8f0; }
-        [data-testid="stSidebar"] { background-color: #0f172a !important; border-right: 1px solid #1e293b; }
-        
-        /* Spaced Sidebar Navigation */
-        div[role="radiogroup"] > label {
-            padding: 15px 0px !important;
-            font-size: 1.1rem !important;
-            font-weight: 600 !important;
-        }
-
-        .hero-section {
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
-            border-radius: 24px; padding: 40px; text-align: center; margin-bottom: 40px;
-        }
-
-        .metric-card {
-            background: rgba(30, 41, 59, 0.4); border-radius: 16px; padding: 35px;
-            border: 1px solid #334155; text-align: center; margin-bottom: 50px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+st.set_page_config(page_title="Instrunet AI", layout="wide")
+st.markdown("""<style>
+    .stApp { background: #0b0f19; color: white; }
+    [data-testid="stSidebar"] { background-color: #0f172a !important; }
+    .status-box { padding: 20px; border-radius: 10px; border: 1px solid #38bdf8; background: rgba(56, 189, 248, 0.1); }
+</style>""", unsafe_allow_html=True)
 
 # ==========================================
-# 🚀 MAIN APP LOOP
+# 🚀 MAIN APP
 # ==========================================
 def main():
-    apply_custom_styles()
     engine = InstrunetCore(MODEL_PATH)
     
-    if "current" not in st.session_state: st.session_state.current = None
-
     with st.sidebar:
         st.title("🎼 INSTRUNET AI")
-        nav = st.radio("NAVIGATE", ["Home", "Upload & Analyze", "Instrument Distribution", "Deep Analysis"])
-
-    if nav == "Home":
-        st.markdown("<div class='hero-section'><h1>INSTRUNET V2</h1><p>Enhanced CNN Instrument Classifier</p></div>", unsafe_allow_html=True)
-        st.markdown("<div class='metric-card'><h3>System Architecture</h3><p>Using CNN for Spectral Mapping and Peak Picking Temporal Landmarks.</p></div>", unsafe_allow_html=True)
-
-    elif nav == "Upload & Analyze":
-        st.title("🎙️ Analysis Studio")
-        
-        # RESTORED: Multi-source input
-        tab1, tab2 = st.tabs(["📁 File Upload", "🎤 Live Record"])
-        
-        with tab1:
-            u_file = st.file_uploader("Upload WAV/MP3", type=["wav", "mp3"])
-        with tab2:
-            r_file = st.audio_input("Record Instrument")
-        
-        source = u_file if u_file else r_file
-        
-        if source:
-            st.audio(source)
-            if st.button("RUN NEURAL SCAN"):
-                if engine.model is None:
-                    st.error(f"Critical Error: {MODEL_FILENAME} not found. Ensure the filename matches exactly.")
-                else:
-                    with st.spinner("Analyzing audio frequencies..."):
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                            tmp.write(source.getvalue()); p = tmp.name
-                        res = engine.process_signal(p)
-                        st.session_state.current = res
-                        st.success("Scan Complete! Go to 'Instrument Distribution'.")
-
-    elif nav == "Instrument Distribution":
-        if st.session_state.current:
-            res = st.session_state.current
-            st.header(f"Detected: {res['result']['label']}")
-            st.write(f"Confidence: {res['result']['conf']*100:.2f}%")
-            df = pd.DataFrame(res['data']['dist'].items(), columns=['Inst', 'Val'])
-            st.plotly_chart(px.bar(df, x='Inst', y='Val', template="plotly_dark"), use_container_width=True)
+        nav = st.radio("MENU", ["Studio", "Results"])
+        st.markdown("---")
+        if MODEL_PATH:
+            st.success(f"✅ Model found: `{MODEL_PATH.split('/')[-1]}`")
         else:
-            st.warning("Please analyze an audio file first.")
+            st.error("❌ Model Missing")
 
-    elif nav == "Deep Analysis":
-        if st.session_state.current:
-            res = st.session_state.current
-            st.header("Signal Landmarks")
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(y=res['signal']['y'][::100], name="Waveform", line=dict(color="#38bdf8")))
-            # Draw peak markers
-            for l in res['signal']['landmarks']:
-                fig.add_vline(x=l*220.5, line_dash="dash", line_color="red")
-            st.plotly_chart(fig, use_container_width=True)
+    if nav == "Studio":
+        st.title("🎙️ Analysis Studio")
+        tab1, tab2 = st.tabs(["📁 Upload", "🎤 Record"])
+        with tab1: file = st.file_uploader("Audio", type=["wav", "mp3"])
+        with tab2: rec = st.audio_input("Record")
+        
+        src = file if file else rec
+        if src and st.button("RUN SCAN"):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                tmp.write(src.getvalue()); p = tmp.name
+            st.session_state.results = engine.process_signal(p)
+            st.success("Analysis complete! Go to Results.")
+
+    if nav == "Results" and 'results' in st.session_state:
+        res = st.session_state.results
+        st.header(f"Detected Instrument Index: {res['label']}")
+        st.plotly_chart(px.bar(y=res['dist'], template="plotly_dark"))
 
 if __name__ == "__main__":
     main()
